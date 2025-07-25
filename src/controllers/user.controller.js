@@ -205,12 +205,12 @@ const loggedOutUser = asyncHandler(async (req, res, next) => {
 // Refresh Access Token //
 
 const refreshAccessToken = asyncHandler(async (req, res) => {
-  const incomingRefreshToken = req.body?.refreshToken || req.cookies?.refreshToken;
+  const incomingRefreshToken =
+    req.body?.refreshToken || req.cookies?.refreshToken;
 
   if (!incomingRefreshToken) {
     throw new ApiError(401, "unauthorized request");
   }
-
 
   try {
     const decodedToken = jwt.verify(
@@ -393,6 +393,69 @@ const updateUserCoverImage = asyncHandler(async (req, res) => {
     .json(new ApiRespons(200, user, "cover image updated successfully"));
 });
 
+const getUserChannelProfile = asyncHandler(async (req, res) => {
+  const { username } = req.params;
+
+  if (!username) {
+    throw new ApiError(404, "username is missing");
+  }
+
+  const channel = await User.aggregate([
+    {
+      $match: {
+        username: username?.toLowerCase(),
+      },
+      $lookup: {
+        from: "subscriptions",
+        localField: "_id",
+        foreignField: "channel",
+        as: "subscribers",
+      },
+      $lookup: {
+        from: "subscriptions",
+        localField: "_id",
+        foreignField: "subscriber",
+        as: "subscribedTo",
+      },
+      $addFields: {
+        subscribersCount: {
+          $size: "$subscriptions",
+        },
+        channelCount: {
+          $size: "$subscribedTo",
+        },
+        isSubscribed: {
+          $cond: {
+            if: { $in: [req.user._id, "subscribers.subscriber"] },
+            then: true,
+            else: false,
+          },
+        },
+      },
+      $project: {
+        username: 1,
+        fullname: 1,
+        subscribersCount: 1,
+        channelCount: 1,
+        isSubscribed: 1,
+        email: 1,
+        avatar: 1,
+        coverImage: 1,
+      },
+    },
+  ]);
+
+  console.log("channel", channel);
+
+  if (!channel?.length) {
+    throw new ApiError(400, "channel does not exist");
+  }
+
+  return res
+    .status(200)
+    .json(new ApiRespons(200, channel[0], "user channel fetched successfully"));
+});
+
 export {
   registerUser,
   loggedInUser,
@@ -403,4 +466,5 @@ export {
   updateAccountDetails,
   updateUserAvatar,
   updateUserCoverImage,
+  getUserChannelProfile
 };
